@@ -1,0 +1,961 @@
+---
+title: "Figuras y tablas finales"
+author: "Juan Carlos Villaseñor-Derbez"
+date: "Last update `r Sys.Date()`"
+output: 
+  html_document: 
+    fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  library(vegan)
+  library(here)
+  library(ggrepel)
+  library(magrittr)
+  library(cowplot)
+  library(sf)
+  library(tmap)
+  library(tidyverse)
+})
+```
+
+```{r}
+kelp <- read.csv(here("data", "Peces_KelpForest_2011-2013.csv"),
+                 stringsAsFactors = F) %>% 
+    transform(location = reorder(location, latitude)) %>% 
+  filter(!year == 2012)
+```
+
+## Mapa
+
+```{r, fig.height = 7, fig.width = 6}
+coastline <- readRDS(file = here("raw_data", "spatial", "coastline_mx.rds")) %>% 
+  st_as_sf()
+
+data(World)
+World <- st_as_sf(World) %>% 
+  st_transform(crs = 4326) %>% 
+  filter(iso_a3 == "USA")
+
+all_points <- group_by(kelp, location, latitude, longitude) %>%
+  summarize(ln = n()) %>%
+  ungroup() %>% 
+  transform(location = reorder(location, -latitude))
+
+general <- all_points %>% 
+  ggplot() +
+  geom_sf(data = World) +
+  geom_sf(data = coastline) +
+  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
+  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
+  scale_x_continuous(limits = c(-120, -108)) +
+  scale_y_continuous(limits = c(22, 36)) +
+  theme_bw()
+
+north <- all_points %>% 
+  ggplot() +
+  geom_sf(data = World) +
+  geom_sf(data = coastline) +
+  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
+  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
+  scale_x_continuous(limits = c(-117.5, -116)) +
+  scale_y_continuous(limits = c(31.5, 32.5)) +
+  theme_bw()
+
+center <- all_points %>% 
+  ggplot() +
+  geom_sf(data = World) +
+  geom_sf(data = coastline) +
+  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
+  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
+  scale_x_continuous(limits = c(-117,-115)) +
+  scale_y_continuous(limits = c(29.5, 31.5)) +
+  theme_bw()
+
+south <- all_points %>% 
+  ggplot() +
+  geom_sf(data = World) +
+  geom_sf(data = coastline) +
+  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
+  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
+  scale_x_continuous(limits = c(-116,-114)) +
+  scale_y_continuous(limits = c(27.5, 30)) +
+  theme_bw()
+
+right <- plot_grid(north, center, south, ncol = 1)
+plot_grid(general, right)
+```
+
+
+# 2011
+
+```{r}
+kelp11 <- kelp %>% 
+  filter(year < 2013,
+         level == "Bottom")
+```
+
+
+## Índices ecológicos
+
+### Tabla de indices ecologicos de 2011 por localidad
+
+```{r}
+loc_data <- kelp11 %>% 
+  group_by(location) %>% 
+  summarize(latitude = mean(latitude),
+            longitude = mean(longitude)) %>% 
+  ungroup()
+
+Stot_wo0 <- kelp11 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, genus_species) %>% 
+  summarize(n = sum(abundance, na.rm = T)) %>% 
+  filter(n > 0) %>% 
+  group_by(location) %>% 
+  summarize(S = n()) %>% 
+  select(location, Stot_wo0 = S)
+
+# S rare
+
+S_data <- kelp11 %>% 
+  filter(transect > 0) %>% 
+  group_by(year, location, site, zone, level, transect, genus_species) %>% 
+  summarize(N = sum(abundance, na.rm = T)) %>% 
+  ungroup() %>% 
+  spread(genus_species, N, fill = 0)
+
+S_matrix <- S_data %>% 
+  select(-c(year, location, site, zone, level, transect)) %>% 
+  as.matrix()
+
+S_groups <- S_data %>% 
+  select(year, location, site, zone, level, transect) %>% 
+  mutate(group = location,
+         year = as.character(year))
+
+S_rare <- specpool(x = S_matrix, pool = as.character(S_groups$group), smallsample = T) %>% 
+  as.data.frame() %>% 
+  mutate(location = rownames(.)) %>% 
+  select(location, S_rare = boot)
+
+## D
+
+D <- kelp11 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  summarize(n = sum(abundance, na.rm = T)) %>% 
+  group_by(location) %>% 
+  summarize(D = mean(n, na.rm = T),
+            sd = sd(n, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(D = formatC(D, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         D = paste(D, "$\\pm$", sd)) %>% 
+  select(location, D)
+
+H <- kelp11 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  mutate(N = sum(ni, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(pi = ni / N) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  summarize(Hi = -1 * sum(pi * log(pi))) %>% 
+  ungroup() %>% 
+  group_by(location) %>% 
+  summarize(H = mean(Hi, na.rm = T),
+            sd = sd(Hi, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(H = formatC(H, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         H = paste(H, "$\\pm$", sd)) %>% 
+  select(location, H)
+
+J <- kelp11 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  filter(ni > 0) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  mutate(S = n(),
+         N = sum(ni)) %>%  
+  ungroup() %>% 
+  mutate(pi = ni / N) %>% 
+  group_by(location, site, zone, level, transect, S) %>% 
+  summarize(Hi = -1 * sum(pi * log(pi))) %>% 
+  ungroup() %>% 
+  mutate(Ji = Hi / log(S)) %>% 
+  filter(!is.nan(Ji)) %>% 
+  group_by(location) %>% 
+  summarize(J = mean(Ji, na.rm = T),
+            sd = sd(Ji, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(J = formatC(J, digits = 2, format = "f"),
+         sd = ifelse(is.na(sd), 0, sd),
+         sd = formatC(sd, digits = 2, format = "f"),
+         J = paste(J, "$\\pm$", sd)) %>% 
+  select(location, J)
+
+L <- kelp11 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  filter(ni > 0) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  mutate(N = sum(ni)) %>%  
+  ungroup() %>% 
+  group_by(location, site, zone, level, transect) %>%
+  summarize(Li = 1 - sum((ni * (ni - 1)) / (N * (N - 1)))) %>% 
+  ungroup() %>% 
+  group_by(location) %>% 
+  summarize(L = mean(Li, na.rm = T),
+            sd = sd(Li, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(L = formatC(L, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         L = paste(L, "$\\pm$", sd)) %>% 
+  select(location, L)
+
+
+indicators_2011 <- Stot_wo0 %>% 
+  left_join(S_rare, by = "location") %>% 
+  left_join(D, by = "location") %>% 
+  left_join(H, by = "location") %>% 
+  left_join(J, by = "location") %>% 
+  left_join(L, by = "location") %>% 
+  left_join(loc_data, by = "location") %>% 
+  arrange(desc(latitude)) %>% 
+  select(-c(latitude, longitude)) %>% 
+  magrittr::set_colnames(value = paste(colnames(.), "2011", sep = "_"))
+
+```
+
+## nMDS con TODAS las localidades 2011 y 2013
+
+```{r}
+data_test2 <- kelp %>% 
+  filter(transect > 0,
+         !location %in% c("ICE", "ISB")) %>%
+  filter(!(location == "COL" & site == "S" & year == 2011)) %>% #Quitando colonet sur fondo 2011
+  group_by(year, location, site, level, transect, genus_species) %>% 
+  summarize(abundance = sum(abundance)) %>% 
+  spread(genus_species, abundance, fill = 0) %>% 
+  gather(genus_species, abundance, -c(location, site, level, transect, year)) %>%
+  ungroup() %>% 
+  mutate(abundance = log(abundance + 1)) %>% 
+  spread(genus_species, abundance, fill = 0)
+
+data_test2_groups <- data_test2 %>% 
+  select(year, location, site, level) %>% 
+  mutate(loc_site = paste(year, location, site, level, sep = "-"))
+
+data_test2_samples <- data_test2 %>% 
+  select(-c(year, location, site, level, transect)) %>% 
+  vegdist(method = "bray")
+
+set.seed(43)
+mds <- metaMDS(data_test2_samples, trace = F)
+
+stress <- paste("2D Stress =", formatC(mds$grstress, digits = 4, format = "f"))
+
+plot_data <- cbind(data_test2_groups, scores(mds)) %>% 
+  mutate(year = as.character(year))
+
+(p2 <- plot_data %>% 
+  ggplot(aes(x = NMDS1, y = NMDS2, sitio = site)) +
+  geom_point(size = 4, aes(fill = level, shape = year), alpha = 0.8) +
+  coord_equal() +
+  scale_fill_brewer(palette = "Paired", name = "Habitat") +
+  scale_shape_manual(values = c(21, 24), name = "Year") +
+  annotate(geom = "text", x = 0.1, y = 0.5, label = stress) +
+  theme(legend.text = element_text(size = 8),
+        legend.title = element_text(size = 10),
+        aspect.ratio = 1))
+```
+
+```{r}
+ggsave(plot = p2,
+       filename = here("docs", "community", "img", "nMDS_bottom_midwater.png"),
+       height = 4,
+       width = 4)
+```
+
+
+## Tabla de densidades por especie y Sitio (Tabla 2)
+
+```{r}
+density_2011_2013 <- kelp %>% 
+  filter(transect > 0,
+         level == "Bottom",
+         !year == 2012) %>%
+  mutate(location = paste(location, year, sep = "-")) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(n = sum(abundance, na.rm = T)) %>% 
+  spread(genus_species, n, fill = 0) %>% 
+  gather(genus_species, n, -c(location, site, zone, level, transect)) %>% 
+  group_by(location, genus_species) %>% 
+  summarize(D = mean(n, na.rm = T),
+            sd = sd(n, na.rm = T)) %>% 
+  ungroup() %>% 
+  filter(D > 0) %>% 
+  mutate(D = formatC(D, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         D = paste(D, "$\\pm$", sd)) %>% 
+  select(location, genus_species, D) %>% 
+  spread(location, D, fill = "") %>% 
+  rename(Species = genus_species)
+
+density_2011_2013 %>% 
+  knitr::kable(escape = F, caption = "Density (org / transect) by species and site.")
+
+write.csv(x = density_2011_2013,
+          file = here("docs", "community", "tables", "spp_density_2011_2013.csv"),
+          row.names = F)
+
+```
+
+
+## IVB
+
+```{r}
+source('~/GitHub/bvi/bvi.R')
+source('~/GitHub/bvi/bvi_plot.R')
+source('~/GitHub/bvi/bvi_col.R')
+source('~/GitHub/bvi/bvi_boxplot.R')
+```
+
+```{r}
+bvi_results <- filter(kelp,
+                      transect > 0,
+                      level == "Bottom") %>%
+  filter(year < 2013,
+         !location %in% c("ISB", "ICE")) %>%
+  group_by(location, site, level, transect, genus_species) %>%
+  summarize(n = sum(abundance)) %>%
+  spread(location, n, fill = 0) %>%
+  gather(location, n,-c(site, level, transect, genus_species)) %>%
+  group_by(location, genus_species) %>%
+  summarize(n = mean(n)) %>%
+  ungroup() %>% 
+  select(location, genus_species, n) %>%
+  spread(location, n) %>%
+  rename(Spp = genus_species) %>% 
+  bvi(sum = F, others = T, p = 0.8)
+
+knitr::kable(bvi_results)
+```
+
+```{r, eval = F}
+bvi_results %>% 
+  select(-c(BVI, rBVI)) %>%
+  gather(Sample, Score, -c(Spp)) %>% 
+  ungroup() %>% 
+  group_by(Sample) %>% 
+  mutate(Total = sum(Score)) %>% 
+  ungroup() %>% 
+  mutate(Score_p = Score / Total * 100) %>% 
+  transform(Spp = reorder(Spp, Score)) %>% 
+  ggplot(aes(x = Spp, y = Score)) +
+  geom_boxplot(outlier.shape = NULL,
+               outlier.alpha = 0,
+               fill = "gray",
+               alpha = 0.5) +
+  geom_jitter(color = "black", size = 2, alpha = 0.5, width = 0.4, height = 0) +
+  theme_bw() +
+  coord_flip() +
+  labs(x = "Spp", y = "Score") +
+  scale_fill_brewer(palette = "Paired")
+```
+
+
+```{r, fig.width = 8, fig.height = 4.5, fig.cap = "relative BVI for species by site. Sites are arranged latitudinally from left - right = north - south.", eval = F}
+bvi_results %>% 
+  select(-c(BVI, rBVI)) %>%
+  gather(Sample, Score, -c(Spp)) %>% 
+  ungroup() %>% 
+  group_by(Sample) %>% 
+  mutate(Total = sum(Score)) %>% 
+  ungroup() %>% 
+  mutate(Score_p = Score / Total * 100) %>% 
+  mutate(Spp = fct_relevel(Spp, "Others")) %>% 
+  select(Sample, Score_p, Spp) %>% 
+  ggplot(aes(x = Sample, y = Score_p, fill = Spp)) +
+  geom_col(color = "black") +
+  scale_fill_viridis_d(name = "Species") +
+  labs(x = "Site", y = "BVI") +
+  ggExtra::rotateTextX()
+```
+
+
+```{r, fig.width = 8, fig.cap = "BVI scores for each species by site. Sites are arranged latitudinally left - right = nort - south."}
+lats <- group_by(kelp11, location, latitude) %>% 
+  count() %>% 
+  select(location, latitude) %>% 
+  arrange(latitude)
+
+(bvi_changes <- filter(kelp, transect > 0) %>%
+    filter(year < 2013,
+           !location %in% c("SIB", "ICE")) %>% 
+    group_by(location, site, level, transect, genus_species) %>%
+    summarize(n = sum(abundance)) %>%
+    spread(location, n, fill = 0) %>%
+    gather(location, n,-c(site, level, transect, genus_species)) %>%
+    group_by(location, genus_species) %>%
+    summarize(n = mean(n)) %>%
+    ungroup() %>% 
+    select(location, genus_species, n) %>%
+    spread(location, n) %>%
+    rename(Spp = genus_species) %>% 
+    bvi(sum = F, others = T, p = 0.8) %>% 
+    select(-c(rBVI, BVI)) %>% 
+    filter(Spp %in% c("Embiotoca jacksoni", "Embiotoca lateralis", "Paralabrax clathratus", "Rhacochilus vacca", "Semicossyphus pulcher", "Sebastes atrovirens", "Sebastes auriculatus", "Halichoeres semmicinctus")) %>%
+    gather(location, score, -Spp) %>% 
+    left_join(lats, by = "location") %>% 
+    mutate(location = fct_reorder(location, .x = latitude, .desc = T)) %>% 
+    ggplot(aes(x = location, y = score, group = Spp)) +
+    geom_smooth(method = "loess", aes(color = Spp), alpha = 0, size = 1.5) +
+    geom_jitter(aes(fill = Spp), size = 3, alpha = 0.8, height = 0, width = 0.25, shape = 21) +
+    scale_fill_brewer(palette = "Paired") +
+    scale_color_brewer(palette = "Paired") +
+    ggExtra::rotateTextX() +
+    ylim(-2, 12) +
+    labs(x = "Site", y = "Score") +
+    startR::ggtheme_plot())
+
+ggsave(plot = bvi_changes,
+       filename = here("docs", "community", "img", "ibv_latitudinal_change.png"),
+       width = 6,
+       height = 4)
+```
+
+# Comparando 2011 - 2013
+
+## Indicadores ecológicos
+
+### Tabla
+
+```{r}
+kelp13 <- kelp %>% 
+  filter(year == 2013,
+         level == "Bottom")
+
+Stot_wo0 <- kelp13 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, genus_species) %>% 
+  summarize(n = sum(abundance, na.rm = T)) %>% 
+  filter(n > 0) %>% 
+  group_by(location) %>% 
+  summarize(S = n()) %>% 
+  select(location, Stot_wo0 = S)
+
+# S rare
+
+S_data <- kelp13 %>% 
+  filter(transect > 0,
+         level == "Bottom") %>% 
+  group_by(year, location, site, zone, level, transect, genus_species) %>% 
+  summarize(N = sum(abundance, na.rm = T)) %>% 
+  ungroup() %>% 
+  spread(genus_species, N, fill = 0)
+
+S_matrix <- S_data %>% 
+  select(-c(year, location, site, zone, level, transect)) %>% 
+  as.matrix()
+
+S_groups <- S_data %>% 
+  select(year, location, site, zone, level, transect) %>% 
+  mutate(group = location,
+         year = as.character(year))
+
+S_rare <- specpool(x = S_matrix, pool = as.character(S_groups$group), smallsample = T) %>% 
+  as.data.frame() %>% 
+  mutate(location = rownames(.)) %>% 
+  select(location, S_rare = boot)
+
+# D
+
+D <- kelp13 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  summarize(n = sum(abundance, na.rm = T)) %>% 
+  group_by(location) %>% 
+  summarize(D = mean(n, na.rm = T),
+            sd = sd(n, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(D = formatC(D, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         D = paste(D, "$\\pm$", sd)) %>% 
+  select(location, D)
+
+H <- kelp13 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  mutate(N = sum(ni, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(pi = ni / N) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  summarize(Hi = -1 * sum(pi * log(pi))) %>% 
+  ungroup() %>% 
+  group_by(location) %>% 
+  summarize(H = mean(Hi, na.rm = T),
+            sd = sd(Hi, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(H = formatC(H, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         H = paste(H, "$\\pm$", sd)) %>% 
+  select(location, H)
+
+J <- kelp13 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  filter(ni > 0) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  mutate(S = n(),
+         N = sum(ni)) %>%  
+  ungroup() %>% 
+  mutate(pi = ni / N) %>% 
+  group_by(location, site, zone, level, transect, S) %>% 
+  summarize(Hi = -1 * sum(pi * log(pi))) %>% 
+  ungroup() %>% 
+  mutate(Ji = Hi / log(S)) %>% 
+  filter(!is.nan(Ji)) %>% 
+  group_by(location) %>% 
+  summarize(J = mean(Ji, na.rm = T),
+            sd = sd(Ji, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(J = formatC(J, digits = 2, format = "f"),
+         sd = ifelse(is.na(sd), 0, sd),
+         sd = formatC(sd, digits = 2, format = "f"),
+         J = paste(J, "$\\pm$", sd)) %>% 
+  select(location, J)
+
+L <- kelp13 %>% 
+  filter(transect > 0) %>% 
+  group_by(location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  filter(ni > 0) %>% 
+  group_by(location, site, zone, level, transect) %>% 
+  mutate(N = sum(ni)) %>%  
+  ungroup() %>% 
+  group_by(location, site, zone, level, transect) %>%
+  summarize(Li = 1 - sum((ni * (ni - 1)) / (N * (N - 1)))) %>% 
+  ungroup() %>% 
+  group_by(location) %>% 
+  summarize(L = mean(Li, na.rm = T),
+            sd = sd(Li, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(L = formatC(L, digits = 2, format = "f"),
+         sd = formatC(sd, digits = 2, format = "f"),
+         L = paste(L, "$\\pm$", sd)) %>%
+  select(location, L)
+
+
+indicators_2013 <- Stot_wo0 %>% 
+  left_join(S_rare, by = "location") %>%
+  left_join(D, by = "location") %>% 
+  left_join(H, by = "location") %>% 
+  left_join(J, by = "location") %>% 
+  left_join(L, by = "location") %>% 
+  left_join(loc_data, by = "location") %>% 
+  arrange(desc(latitude)) %>% 
+  select(-c(latitude, longitude))  %>% 
+  magrittr::set_colnames(value = paste(colnames(.), "2013", sep = "_"))
+
+indicators_2011_2013 <- indicators_2011 %>% 
+  left_join(indicators_2013, by = c("location_2011" = "location_2013")) %>% 
+  drop_na() %>% 
+  select(location = location_2011,
+         Stot_wo0_2011, Stot_wo0_2013,
+         S_rare_2011, S_rare_2013,
+         D_2011, D_2013,
+         H_2011, H_2013,
+         J_2011, J_2013,
+         L_2011, L_2013)
+
+write.csv(indicators_2011_2013,
+          file = here("docs", "community", "tables", "indicators_2011_2013.csv"),
+          row.names = F)
+
+
+knitr::kable(indicators_2011_2013,
+             escape = F,
+             col.names = c("Location", "S2011", "S2013", "S bootstrap 2011", "S bootstrap 2013", "D 2011", "D 2013", "H' 2011", "H' 2013", "J' 2011", "J' 2013", "$1 - \\lambda$ 2013", "$1 - \\lambda$ 2013"))
+```
+
+### Figura
+
+En esta figura comparamos latitud y tiempo al mismo tiempo, y es la que podemos incluir como figura 2.
+
+```{r, fig.width = 10, fig.height = 7, fig.cap = "Comparision of ecological indices by site for 2011 (blue) and 2013 (red). Sites are arranged latitudinally left - right = nort - south."}
+
+kelp <- kelp %>% 
+  mutate(year = ifelse(year == 2012, 2011, year))
+
+S_data <- kelp %>% 
+  filter(transect > 0,
+         level == "Bottom") %>% 
+  group_by(year, location, site, zone, level, transect, genus_species) %>% 
+  summarize(N = sum(abundance, na.rm = T)) %>% 
+  ungroup() %>% 
+  spread(genus_species, N, fill = 0)
+
+S_matrix <- S_data %>% 
+  select(-c(year, location, site, zone, level, transect)) %>% 
+  as.matrix()
+
+S_groups <- S_data %>% 
+  select(year, location, site, zone, level, transect) %>% 
+  mutate(group = paste(year, location),
+         year = as.character(year))
+
+S_2013 <- specpool(x = S_matrix, pool = as.character(S_groups$group), smallsample = T) %>% 
+  as.data.frame() %>% 
+  mutate(group = rownames(.)) %>% 
+  select(group, value = boot, se = boot.se) %>% 
+  left_join(S_groups, by = "group") %>% 
+  ggplot(aes(x = location, y = value, fill = year)) +
+  geom_errorbar(aes(ymin = value - se, ymax = value + se), width = 0.2, position = position_dodge(width = 0.5)) +
+  geom_point( size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
+  coord_flip() +
+  theme(strip.background = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title.x = element_text(size = 10),
+        legend.position = "none") +
+  labs(x = "Site", y = "Richness (num. spp)") +
+  scale_fill_brewer(palette = "Set1", direction = -1)
+
+D_2013 <- kelp %>% 
+  filter(transect > 0,
+         level == "Bottom") %>% 
+  filter(!genus_species == "Engraulis mordax") %>% 
+  group_by(year, location, site, zone, level, transect) %>% 
+  summarize(n = sum(abundance, na.rm = T)/60) %>% 
+  group_by(year, location) %>% 
+  summarize(D = mean(n, na.rm = T),
+            sd = sd(n, na.rm = T)) %>% 
+  ungroup() %>% 
+  select(year, location, value = D, sd) %>% 
+  mutate(year = as.character(year)) %>% 
+  ggplot(aes(x = location, y = value, fill = year)) +
+  geom_errorbar(aes(ymin = value - sd, ymax = value + sd), width = 0.2, position = position_dodge(width = 0.5)) +
+  geom_point(size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
+  coord_flip() +
+  theme(strip.background = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title.x = element_text(size = 10),
+        legend.justification = c(0, 1),
+        legend.position = c(0.8, 0.92),
+        legend.text = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.background = element_rect(fill = "transparent",
+                                         size=0.5,
+                                         linetype = "solid", 
+                                         colour = "black")) +
+  labs(x = "", y = expression(Density~(log[10](Org~m^{-2})))) +
+  scale_fill_brewer(palette = "Set1", direction = -1, name = "Year")
+
+H_2013 <- kelp %>% 
+  filter(transect > 0,
+         level == "Bottom") %>% 
+  group_by(year, location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  group_by(year, location, site, zone, level, transect) %>% 
+  mutate(N = sum(ni, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(pi = ni / N) %>% 
+  group_by(year, location, site, zone, level, transect) %>% 
+  summarize(Hi = -1 * sum(pi * log(pi))) %>% 
+  ungroup() %>% 
+  group_by(year, location) %>% 
+  summarize(H = mean(Hi, na.rm = T),
+            sd = sd(Hi, na.rm = T)) %>% 
+  ungroup() %>% 
+  select(year, location, value = H, sd) %>% 
+  mutate(year = as.character(year)) %>% 
+  ggplot(aes(x = location, y = value, fill = year)) +
+  geom_errorbar(aes(ymin = value - sd, ymax = value + sd), width = 0.2, position = position_dodge(width = 0.5)) +
+  geom_point(size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
+  coord_flip() +
+  theme(strip.background = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title.x = element_text(size = 10),
+        legend.position = "none") +
+  labs(x = "", y = "Shannon's index") +
+  scale_fill_brewer(palette = "Set1", direction = -1)
+
+L_2013 <- kelp %>% 
+  filter(transect > 0,
+         level == "Bottom") %>% 
+  group_by(year, location, site, zone, level, transect, genus_species) %>% 
+  summarize(ni = sum(abundance, na.rm = T)) %>% 
+  filter(ni > 0) %>% 
+  group_by(year, location, site, zone, level, transect) %>% 
+  mutate(N = sum(ni)) %>%  
+  ungroup() %>% 
+  group_by(year, location, site, zone, level, transect) %>%
+  summarize(Li = 1 - sum((ni * (ni - 1)) / (N * (N - 1)))) %>% 
+  ungroup() %>% 
+  group_by(year, location) %>% 
+  summarize(L = mean(Li, na.rm = T),
+            sd = sd(Li, na.rm = T)) %>% 
+  ungroup() %>% 
+  select(year, location, value = L, sd)%>% 
+  mutate(year = as.character(year)) %>% 
+  ggplot(aes(x = location, y = value, fill = year)) +
+  geom_errorbar(aes(ymin = value - sd, ymax = value + sd), width = 0.2, position = position_dodge(width = 0.5)) +
+  geom_point(size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
+  coord_flip() +
+  theme(strip.background = element_blank(),
+        axis.text = element_text(size = 8),
+        axis.title.x = element_text(size = 10),
+        legend.position = "none") +
+  labs(x = "", y = "Simpson's index") +
+  scale_fill_brewer(palette = "Set1", direction = -1)
+
+(index_2013 <- cowplot::plot_grid(S_2013, D_2013, H_2013, L_2013, ncol = 4, labels = "AUTO"))
+
+ggsave(plot = index_2013,
+       filename = here("docs", "community", "img", "latitudinal_indices_2011_2013.png"),
+       width = 8,
+       height = 4.5)
+```
+
+## Densidades de Kelp
+
+```{r}
+(kelp_changes <- kelp %>% 
+   filter(level == "Bottom",
+          transect > 0) %>% 
+   group_by(year, location) %>% 
+   summarize(sd = sd(kelp_density, na.rm = T),
+             kelp_density = mean(kelp_density, na.rm = T)) %>% 
+   ungroup() %>% 
+   mutate(year = as.character(year)) %>% 
+   filter(kelp_density > 0) %>% 
+   ggplot(aes(x = location, y = kelp_density, fill = year)) +
+   geom_errorbar(aes(ymin = kelp_density - sd, ymax = kelp_density + sd),
+                 width = 0.2,
+                 position = position_dodge(width = 0.5)) +
+   geom_point(size = 2,
+              color = "black",
+              shape = 21,
+              position = position_dodge(width = 0.5)) +
+   coord_flip() +
+   startR::ggtheme_plot() +
+   theme(axis.text = element_text(size = 8),
+         axis.title.x = element_text(size = 10)) +
+   labs(x = "", y = quo("Kelp density (fronds / "~m^2~")")) +
+   scale_fill_brewer(name = "Year", palette = "Set1", direction = -1))
+```
+
+```{r}
+ggsave(plot = kelp_changes,
+       filename = here("docs", "community", "img", "kelp_changes.png"),
+       width = 4,
+       height = 4)
+```
+
+
+
+## nMDS del tiempo
+
+Presentamos las 9 localidades que se visitaron el 2011 y 2013. En la figura A se presentan todas, y la B excluimos el punto de ERE en el 2011 para poder hacer zoom a los datos.
+
+```{r, fig.height = 5, fig.width = 5}
+anosim_c_cedros <- kelp %>% 
+  filter(location %in% c("ASA", "BMA", "ERE", "ERO", "ISME", "ITSP", "RET", "SMI", "SSI"),
+         level == "Bottom",
+         transect > 0) %>% 
+  group_by(year, location, site, level, transect, genus_species) %>% 
+  summarize(abundance = sum(abundance)) %>% 
+  ungroup() %>% 
+  group_by(year, location, genus_species) %>% 
+  summarize(abundance = mean(abundance)) %>%
+  ungroup() %>% 
+  mutate(abundance = sqrt(abundance)) %>% 
+  spread(genus_species, abundance, fill = 0)
+
+data_c_cedros_groups <- anosim_c_cedros %>% 
+  select(year, location) %>% 
+  mutate(loc_site = paste(location, sep = "-"))
+
+data_c_cedros_samples <- anosim_c_cedros %>% 
+  select(-c(year, location)) %>% 
+  vegdist(method = "bray")
+
+set.seed(43)
+mds <- metaMDS(data_c_cedros_samples, trace = F)
+
+stress <- paste("2D Stress =", formatC(mds$grstress, digits = 4, format = "f"))
+
+(nmds_change <- cbind(data_c_cedros_groups, scores(mds)) %>% 
+    mutate(year = as.factor(year)) %>% 
+    ggplot(aes(x = NMDS1, y = NMDS2, color = location)) +
+    geom_line(aes(group = location), linetype = "dashed") +
+    geom_point(aes(shape = year), size = 4) +
+    scale_fill_brewer(palette = "Paired", name = "Location") +
+    annotate(geom = "text", x = -0.4, y = 0.3, label = stress) +
+    theme(aspect.ratio = 1,
+          legend.justification = c(0, 1),
+          legend.position = c(1.1, -0.2),
+          legend.box = "horizontal") +
+    guides(color = guide_legend(order = 1),
+           shape = guide_legend(title = "Year", order = 0)))
+```
+
+## SIMPER	
+	
+```{r, eval = F}	
+simper_data <- filter(kelp, transect > 0) %>%	
+  filter(year < 2013,
+         level == "Bottom") %>%	
+  group_by(location, site, level, transect, genus_species) %>%	
+  summarize(n = sum(abundance)) %>%	
+  ungroup() %>% 	
+  mutate(n = sqrt(n)) %>% 	
+  spread(genus_species, n, fill = 0)	
+	
+	
+comm <- simper_data %>% 	
+  select(-c(location, site, level, transect)) %>% 	
+  as.matrix()	
+	
+sim <- simper(comm = comm,	
+              group = simper_data$location,	
+              permutations = 999,	
+              parallel = 3)	
+	
+cusums <- tibble(species = sim$ASA_BMA$species) %>% 	
+  cbind(map_df(sim, "cusum")) %>% 	
+  gather(pair, cumsum, -species)	
+	
+overall <- map_df(sim, "overall") %>% 	
+  gather(pair, overall)	
+```
+
+```{r, eval = F}
+tibble(species = sim$ASA_BMA$species) %>% 	
+  cbind(map_df(sim, "average")) %>% 	
+  gather(pair, average, -species) %>%	
+  left_join(cusums, by = c("species", "pair")) %>% 	
+  left_join(overall, by = "pair") %>% 	
+  filter(cumsum <= 0.95) %>%	
+  transform(species = reorder(species, average)) %>% 	
+  mutate(pair = str_replace(pair, "_", " vs. "),	
+         average = average / overall) %>% 
+  ggplot(aes(x = species, y = average, fill = average)) +	
+  geom_violin(outlier.shape = NULL,	
+               outlier.alpha = 0,	
+               alpha = 0.5) +	
+  theme_bw() +	
+  coord_flip() +	
+  labs(x = "Spp", y = "Avg % disim") +	
+  theme(legend.position = "none") +	
+  scale_fill_viridis_d()
+```
+
+# Temperature
+
+```{r}
+all_temps <- read.csv(here("data", "temps.csv"), stringsAsFactors = F)
+
+t2011 <- all_temps %>% 
+  filter(year == 2011) %>% 
+  select(location, t2011 = temp)
+
+mdsT <- cbind(data_c_cedros_groups, scores(mds)) %>%
+  left_join(all_temps, by = c("location", "year")) %>% 
+  left_join(t2011, by = "location") %>% 
+  mutate(temp2 = temp - t2011,
+         year = as.character(year))
+
+(nmds_change_temp <- ggplot(data = mdsT, aes(x = NMDS1, y = NMDS2, fill = temp)) +
+    geom_point(size = 4, aes(shape = year)) +
+    geom_line(aes(group = location), linetype = "dashed") +
+    theme(aspect.ratio = 1,
+          legend.justification = c(0, 1),
+          legend.position = c(0, 1.1),
+          legend.box = "horizontal") +
+    scale_fill_gradientn(colours = wesanderson::wes_palette(name = "Zissou1",
+                                                            n = 5)) +
+    scale_shape_manual(values = c(21, 24),guide = FALSE) +
+    guides(fill = guide_colorbar(title = "Temperature (°C)",
+                                 ticks.colour = "black",
+                                 frame.colour = "black")))
+```
+
+```{r}
+r <- cor(mdsT$NMDS1, mdsT$temp, method = "pearson")
+tscore <- r * sqrt((18 - 2) / (1 - r^2))
+p <- 2*pt(tscore, df = 16, lower.tail = FALSE)
+```
+
+
+Pearson's r = `r r`, t(16) =  `r tscore` (p = `r p`)
+
+# Kelp
+
+```{r}
+kelp_repeated <- kelp %>% 
+  filter(location %in% c("ASA", "BMA", "ERE", "ERO", "ISME", "ITSP", "RET", "SMI", "SSI"),
+         level == "Bottom",
+         transect > 0) %>% 
+  group_by(year, location) %>% 
+  summarize(kelp = mean(kelp_density, na.rm = T)) %>% 
+  ungroup()
+
+mdsKelp <- cbind(data_c_cedros_groups, scores(mds)) %>% 
+  left_join(kelp_repeated, by = c("year", "location")) %>% 
+  mutate(year = as.factor(year))
+
+(nmds_change_kelp <- ggplot(mdsKelp, aes(x = NMDS1, y = NMDS2, fill = kelp)) +
+    geom_point(size = 4, aes(shape = year)) +
+    geom_line(aes(group = location), linetype = "dashed") +
+    theme(aspect.ratio = 1,
+          legend.justification = c(0, 1),
+          legend.position = c(0, 1.1),
+          legend.box = "horizontal") +
+    scale_fill_gradientn(colours = wesanderson::wes_palette(name = "Zissou1",
+                                                            n = 5)) +
+    scale_shape_manual(values = c(21, 24),guide = FALSE) +
+    guides(fill = guide_colorbar(title = quo("Kelp fronds m"^-2),
+                                 ticks.colour = "black",
+                                 frame.colour = "black")))
+```
+
+
+```{r}
+r <- cor(mdsKelp$NMDS1, mdsKelp$kelp, method = "pearson")
+tscore <- r * sqrt((18 - 2) / (1 - r^2))
+p <- 2*pt(tscore, df = 16, lower.tail=FALSE)
+```
+
+Pearson's r = `r r`, t(16) =  `r tscore` (p = `r p`)
+
+```{r, fig.height = 6, fig.width = 6}
+(nmds_change_time <- plot_grid(nmds_change,
+                               nmds_change_temp,
+                               nmds_change_kelp,
+                               ncol = 2,
+                               labels = "AUTO"))
+```
+
+```{r}
+ggsave(plot = nmds_change_time,
+       filename = here("docs", "community", "img", "nmds_change_time.png"),
+       width = 7,
+       height = 7)
+```
+
+
