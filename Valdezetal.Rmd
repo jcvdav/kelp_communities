@@ -1,0 +1,588 @@
+---
+title: \Large{Biogeography and community structure of the nearshore kelp forest fishes of Baja California}
+fontsize: 12pt
+output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    keep_tex: yes
+header-includes:
+- \usepackage{setspace}
+- \doublespacing
+- \usepackage{lineno}
+- \linenumbers
+# bibliography:
+# csl: huct.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+
+windowsFonts(Times=windowsFont("TT Times New Roman"))
+```
+
+
+```{r}
+suppressPackageStartupMessages({
+  library(vegan)
+  library(broom)
+  library(knitr)
+  library(ggjoy)
+  library(sp)
+  library(tmap)
+  library(rgdal)
+  library(raster)
+  library(maptools)
+  library(tidyverse)
+  library(tmaptools)
+  library(MPAtools)
+  library(magrittr)
+})
+```
+
+**Authors**
+Arturo Ramírez-Valdez$^1$, Juan Carlos Villaseñor-Derbez$^2$, Gabriela Montaño-Moctezuma$^3$, Guillermo Torres-Moye$^4$
+
+
+**Adscriptions**
+
+^1^ SCRIPPS Institution of Oceanography, University of California San Diego, San Diego, CA
+
+^2^ Bren School of Environmental Science & Management, University of California Santa Barbara, Santa Barbara, CA
+  
+^3^ Instituto de Investigaciones Oceanológicas, Universidad Autónoma de Baja California, Km. 103 Carretera Tijuana-Ensenada, Ensenada, Baja California, México C.P. 22860
+
+^4^ Facultad de Ciencias Marinas, Universidad Autónoma de Baja California, Km. 103 Carretera Tijuana-Ensenada, Ensenada, Baja California, México C.P. 22860
+
+# Abstract
+
+# Introduction
+
+# Materials and Methods
+
+
+```{r load data}
+length_data <- read.csv(here("data","Peces_KelpForest_2011-2013.csv"), stringsAsFactors = F)
+```
+
+```{r, message = F, warning = F}
+proj <- CRS("+proj=longlat +datum=NAD27")
+
+load("./Data/Spatial/coastline_mx.Rda")
+
+proj2 <- CRS(proj4string(baja2))
+
+#Small shapefile for region of interest
+region <- data.frame(X = c(-117.5, -114.5, -114.5, -117.5), Y = c(29.5, 29.5, 32.5, 32.5)) %>% 
+  Polygon() %>% 
+  list() %>% 
+  Polygons(ID = 1) %>% 
+  list() %>% 
+  SpatialPolygons(proj4string = proj2)
+
+# Labes for first map
+labels1 <- data.frame(X = c(-106, -104, -112), Y = c(35, 26, 20), Label = c("U.S.A.", "Mexico", "Pacific Ocean"))
+coordinates(labels1) <- c("X", "Y")
+proj4string(labels1) <- proj2
+labels1 <- spTransform(labels1, proj2)
+
+# Labes for second map
+labels2 <- data.frame(X = c(-115.75, -115.75, -117), Y = c(31.5, 31.25, 30.5), Label = c("Baja California", "Peninsula", "Pacific Ocean"))
+coordinates(labels2) <- c("X", "Y")
+proj4string(labels2) <- proj2
+labels2 <- spTransform(labels2, proj2)
+
+#convert the spatial points in length data to shapefile
+xy <- data.frame(X = length_data$Longitude, Y = length_data$Latitude)
+coordinates(xy) <- c("X", "Y")
+proj4string(xy) <- proj2  ## for example
+res <- spTransform(xy, proj2)
+sites <- SpatialPointsDataFrame(coords = res, data = length_data, proj4string = proj2)
+
+# Maps
+data(World)
+W <- spTransform(World, proj)
+W <- W[W$name %in% c("United States"),]
+
+pen_map <- tm_shape(W, bbox = bb(xlim = c(-118, -95), ylim = c(17.5, 33))) +
+  tm_polygons() +
+  tm_shape(baja2) +
+  tm_polygons() +
+  tm_shape(region) +
+  tm_polygons(alpha = 0, border.col = "red", lwd = 2) +
+  tm_shape(labels1) +
+  tm_text("Label") +
+  tm_scale_bar(position = c("left", "bottom"))
+
+study_area <- tm_shape(W, bbox = bb(xlim = c(-117.5, -114.5), ylim = c(29.5, 32.5))) +
+  tm_polygons(border.col = "black") +
+  tm_shape(baja2) +
+  tm_polygons() +
+  tm_shape(labels2) +
+  tm_text("Label")+
+  tm_shape(sites) +
+  tm_bubbles(size = 0.15, border.col = "black", col = "black", shape = 20) +
+  tm_compass(position = c("left", "bottom")) +
+  tm_scale_bar(position = c("left", "bottom"))
+
+tmap_arrange(pen_map, study_area, outer.margins = 0.005, ncol = 2)
+```
+
+## Study site
+
+## Sampling
+
+## Data Analysis
+
+\clearpage
+
+# Results
+
+```{r}
+taxa_summary <-  group_by(length_data, class, order, family, genus, genusspecies) %>% 
+  summarize(n = n()) %>% 
+  ungroup() %>% 
+  select(-n)
+```
+
+Our sampling efforts identified a total of `r length(unique(taxa_summary$GenusSpecies))` Species, distributed among `r length(unique(taxa_summary$Genus))` Genera, `r length(unique(taxa_summary$Family))` Families,`r length(unique(taxa_summary$Order))` Orders, and `r length(unique(taxa_summary$Class))` Classes (Table 1)
+
+
+```{r}
+knitr::kable(taxa_summary, format = "latex",
+               col.names = c("Class", "Order", "Family", "Genus", "Species"),
+               booktabs = T,
+               longtable = T,
+             caption = "Taxonomic list of fish species observed in Kelp Forests of Baja California in 2013") %>% 
+  kableExtra::kable_styling(latex_options = c("repeat_header"), font_size = 9) %>% 
+  kableExtra::column_spec(column = 5, italic = T)
+```
+
+
+\clearpage
+
+```{r}
+se <- function(x) {
+  sd(x) / sqrt(length(x))
+}
+
+filter(length_data, transect > 0, year == 2013) %>%
+  group_by(location, zone, site, level, transect, genusspecies) %>%
+  summarize(n = sum(abundance)) %>%
+  ungroup() %>% 
+  mutate(D = n / 60) %>%
+  select(location, zone, site, level, transect, genusspecies, D) %>%
+  group_by(location, genusspecies) %>%
+  summarize(SD = se(D),
+            D = mean(D)) %>%
+  ungroup() %>%
+  mutate(D = ifelse(D == 0, 0, D),
+         SD = ifelse(is.na(SD), 0, SD),
+         D = formatC(D, digits = 3, format = "f"),
+         SD = formatC(SD, digits = 3, format = "f"),
+         value = paste0(D, " (", SD, ")"),
+         value = ifelse(value == "0.000 (0.000)", "", value)) %>%
+  select(location, genusspecies, value) %>%
+  spread(location, value, fill = 0) %>%
+  rename(Taxa = genusspecies) %>%
+  knitr::kable(format = "latex",
+               booktabs = T,
+               caption = "Mean densities (org / transect) for 50 fish species in 14 Sites along Baja California. Numbers in parenthesis indicate 1 Standard Error") %>%
+  kableExtra::kable_styling(latex_options = c("scale_down")) %>%
+  kableExtra::landscape()
+```
+
+```{r}
+indicator_data <- length_data %>% 
+  filter(!year == 2012) %>% 
+  mutate(Comunidad = "Baja California",
+         Transecto = id,
+         Zona = "Reserva",
+         Temperatura = NA,
+         ProfundidadInicial = NA,
+         Visibilidad = NA) %>% 
+  filter(transect > 0) %>% 
+  rename(Abundancia = abundance,
+         Sitio = location,
+         GeneroEspecie = genusspecies,
+         Talla = totallength,
+         Ano = year) %>% 
+  filter(Sitio %in% c("ASA", "BMA", "ERE", "ERO", "ISME", "ITSP", "SMI", "SSI"))
+
+H <- shannon(indicator_data, location = "Baja California")
+S <- richness(indicator_data, location = "Baja California")
+D <- density(indicator_data, location = "Baja California")
+B <- fish_biomass(indicator_data, location = "Baja California")
+
+bartlettH <- bartlett.test(Indicador ~ Sitio, H)
+bartlettS <- bartlett.test(Indicador ~ Sitio, S)
+bartlettD <- bartlett.test(Indicador ~ Sitio, D)
+bartlettB <- bartlett.test(Indicador ~ Sitio, B)
+  
+```
+
+Homogeneity of variance was tested with Bartlett's test ($\alpha$ = 0.05). Shannon's Diversity Index and Species Richness showed no significant difference in variances between sites (*p* > 0.05), and thus One-Way ANOVA were used to inspect differences in variance of each indicator between sites. Bartlett's test for Fish density and Biomass, however, showed significant differences in variances between groups (*p* < 0.05) and the non-parametric Kruskal-Wallis test was used to inspect differences in indicators between sites.
+
+```{r}
+aov(Indicador ~ Sitio, H) %>% tidy() %>% kable(caption = "ANOVA table for Shannon's diversity index")
+aov(Indicador ~ Sitio, S) %>% tidy() %>% kable(caption = "ANOVA table for Species richness")
+kruskal.test(Indicador ~ as.factor(Sitio), D) %>% tidy() %>% kable(caption = "Kruskal-Wallis rank-sum test results for Density")
+kruskal.test(Indicador ~ as.factor(Sitio), B) %>% tidy() %>% kable(caption = "Kruskal-Wallis rank-sum test results for Biomass")
+```
+
+```{r}
+mean_sdl2 <- function(x){
+  data.frame(y = mean(x), ymin = mean(x), ymax = mean(x) +sd(x))
+}
+
+indicator_plot <- function(x, ylab = "", order = NULL){
+  
+  left_join(x, order, by = "Sitio") %>% 
+    transform(Sitio = reorder(Sitio, -latitude)) %>% 
+    mutate(Ano = as.character(Ano)) %>% 
+    ggplot(mapping = aes(x = Sitio, y = Indicador, fill = Ano, group = paste(Ano, Sitio))) +
+    geom_boxplot(outlier.size = 0) +
+    stat_summary(geom = "point", fun.y = "mean", color = "black", position = position_dodge(width = 1)) +
+    theme_bw() +
+    theme(text = element_text(family = "Times", size = 8)) +
+    labs(y = ylab) +
+    scale_fill_brewer(palette = "Set1")
+}
+```
+
+
+```{r, fig.cap = "Ecological indicators for fish communities of Baja California's Kelp Forests. A) Shannon's Diversity Index, B) Species richness, C) Density, D) Biomass."}
+
+order <- length_data %>% 
+  group_by(site, latitude) %>% 
+  count() %>% 
+  rename(Sitio = site)
+
+H_plot <- indicator_plot(H, ylab = "H'", order)
+
+S_plot <- indicator_plot(S, ylab = "S (spp / transect)", order)
+
+D_plot <- indicator_plot((D %>% mutate(Indicador = log10(Indicador))), ylab = "log10 Density (org / transect)", order)
+
+B_plot <- indicator_plot((B %>% mutate(Indicador = log(Indicador))), ylab = "Biomass (Kg / transect)", order)
+
+
+cowplot::plot_grid(H_plot, S_plot, D_plot, B_plot, ncol = 2)
+```
+
+
+```{r}
+source('~/GitHub/bvi/bvi.R')
+source('~/GitHub/bvi/bvi_plot.R')
+source('~/GitHub/bvi/bvi_col.R')
+source('~/GitHub/bvi/bvi_boxplot.R')
+```
+
+```{r}
+filter(length_data, Transect > 0) %>%
+  group_by(Location, Site, Level, Transect, GenusSpecies) %>%
+  summarize(n = sum(Abundance)) %>%
+  mutate(D = n / 60) %>%
+  select(-n) %>% 
+  spread(Location, D, fill = 0) %>%
+  gather(Location, D,-c(Site, Level, Transect, GenusSpecies)) %>%
+  group_by(Location, GenusSpecies) %>%
+  summarize(D = mean(D)) %>%
+  ungroup() %>% 
+  select(Location, GenusSpecies, D) %>%
+  spread(Location, D) %>%
+  rename(Spp = GenusSpecies) %>% 
+  bvi(sum = T, others = T) %>%
+  mutate(cBVI = cumsum(rBVI),
+         cBVI = ifelse(cBVI > 100, NA, cBVI)) %>% 
+  knitr::kable(format = "latex",
+               booktabs = T,
+               caption = "Biological Value Index for fish species in Baja California's Kelp Forests") %>%
+  kableExtra::kable_styling(latex_options = c("scale_down")) %>% 
+  kableExtra::landscape() %>% 
+  kableExtra::column_spec(column = 1, italic = T)
+```
+
+```{r, fig.cap = "Boxplots showing the scores in the Biological Value Index calculation for each species. Highest scores represent species that consistently had the largest abundances."}
+filter(length_data, Transect > 0) %>%
+  group_by(Location, Site, Level, Transect, GenusSpecies) %>%
+  summarize(n = sum(Abundance)) %>%
+  mutate(D = n / 60) %>%
+  select(-n) %>% 
+  spread(Location, D, fill = 0) %>%
+  gather(Location, D,-c(Site, Level, Transect, GenusSpecies)) %>%
+  group_by(Location, GenusSpecies) %>%
+  summarize(D = mean(D)) %>%
+  ungroup() %>% 
+  select(Location, GenusSpecies, D) %>%
+  spread(Location, D) %>%
+  rename(Spp = GenusSpecies) %>% 
+  bvi(sum = F, others = T) %>% 
+  bvi_boxplot()
+```
+
+
+```{r, fig.height = 6, fig.width = 7, fig.cap = "Densities of the top 12 species identified by the BVI."}
+abundant_spp <- filter(length_data, Transect > 0) %>%
+  group_by(Location, Site, Level, Transect, GenusSpecies) %>%
+  summarize(n = sum(Abundance)) %>%
+  mutate(D = n / 60) %>%
+  select(-n) %>% 
+  spread(Location, D, fill = 0) %>%
+  gather(Location, D,-c(Site, Level, Transect, GenusSpecies)) %>%
+  group_by(Location, GenusSpecies) %>%
+  summarize(D = mean(D)) %>%
+  ungroup() %>% 
+  select(Location, GenusSpecies, D) %>%
+  spread(Location, D) %>%
+  rename(Spp = GenusSpecies) %>% 
+  bvi(sum = T, others = T)
+
+filter(length_data, GenusSpecies %in% abundant_spp$Spp) %>% 
+  transform(Location = reorder(Location, -Latitude)) %>% 
+  ggplot(aes(x = Location, y = Abundance)) +
+  stat_summary(geom = "col", fun.y = "mean", alpha = 0.5, color = "black") +
+  stat_summary(geom = "errorbar", fun.data = mean_sdl2) +
+  facet_wrap(~GenusSpecies, scales = "free_y", ncol = 3) +
+  theme_bw() +
+  theme(text = element_text(family = "Times", size = 8),
+        strip.background = element_rect(fill = "transparent"),
+        strip.text = element_text(face = "italic", size = 8)) +
+  ggExtra::rotateTextX() +
+  labs(x = "Site", y = "Density (org / transect)")
+
+```
+
+\clearpage
+
+```{r}
+anosim_R_plot <- function(anosim){
+  data.frame(R = anosim$perm) %>% 
+  ggplot(aes(x = R)) +
+  geom_histogram(alpha = 0.5, color = "black") +
+  ggtitle(paste0("R Statistic:", formatC(anosim$statistic, digits = 4, format = "f"), "\np = ", formatC(anosim$signif, digits = 4, format = "f"))) +
+    theme_bw()
+}
+```
+
+
+ANOSIM comparing between sites indicates no signifficant differences in fish assamblages between sites (R = 0.0636, p > 0.05).
+
+```{r}
+set.seed(1)
+
+effort <- filter(length_data, Transect > 0) %>% 
+  group_by(Location, Zone, Site, Level, Transect) %>%
+  summarize(n = n()) %>% 
+  group_by(Location, Zone, Site, Level) %>% 
+  summarize(Transects = n())
+
+anosim_df <- filter(length_data, Transect > 0) %>%
+  group_by(Location, Zone, Site, Level, Transect, GenusSpecies) %>%
+  summarize(N = sum(Abundance)) %>%
+  # group_by(Location, Zone, Site, Level, GenusSpecies) %>% 
+  # summarize(N = sum(N)) %>% 
+  # left_join(effort, by = c("Location", "Zone", "Site", "Level")) %>% 
+  # mutate(N = N/Transects) %>% 
+  mutate(ID = paste0(Location, Zone, Site, Level, Transect)) %>% 
+  # select(-Transects) %>% 
+  spread(GenusSpecies, N, fill = 0)
+
+anosim_matrix <- anosim_df[,-c(1:6)] %>% sqrt()
+
+anosim_df2 <- filter(length_data, Transect > 0) %>% 
+  group_by(Location, Zone, Site, Level, Transect) %>%
+  summarize(n = n()) %>% 
+  # group_by(Location, Zone, Site, Level) %>% 
+  # summarize(Transects = n()) %>% 
+  mutate(ID = paste0(Location, Zone, Site, Level, Transect)) #%>%
+  # select(-Transects)
+
+anosim_sites <- anosim_matrix %>% 
+  vegdist() %>% 
+  anosim(grouping = anosim_df2$Location)
+
+summary(anosim_sites)
+
+anosim_R_plot(anosim_sites)
+```
+
+ANOSIM to compare between Habitat (bottom / midwater) identified significant differences between bottom and midwater fish assamblages (R = 0.3936, p < 0.05)
+
+```{r}
+set.seed(1)
+
+anosim_habitat <- anosim_matrix %>% 
+  vegdist() %>% 
+  anosim(grouping = anosim_df2$Level)
+
+summary(anosim_habitat)
+
+anosim_R_plot(anosim_habitat)
+```
+
+
+4 nMDS were generated with square-root transformed densities and Bray-Curtis Distances. First, one point per averaging across transects for each combination of Site, Zone (North / Sourth), and Habitat (bottom / midwater). Then, for all information averaged by site, all information averaged by site but excluding midwater transects, and all information averaged by site but excluding bottom transects.
+
+nMDS for all surveyed sites. Note that bottom transects (circle markers) and midwater transects (triangle markers) are segregated for all sites, but thers is no clear pattern between sites. This indicates that the difference between bottom and midwater fish assamblages is greater than the difference between sites?
+
+```{r, fig.width = 6, fig.height = 5}
+set.seed(1)
+
+mds <- anosim_matrix %>%
+  vegdist() %>%
+  monoMDS()
+
+as.data.frame(scores(mds)) %>% 
+  mutate(ID = anosim_df2$ID) %>% 
+  left_join(anosim_df2, by = "ID") %>% 
+  ggplot(mapping = aes(x = MDS1, y = MDS2, color = Location, shape = Level, size = Transect)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_bw() +
+  coord_equal() +
+  ggExtra::removeGrid() + 
+  annotate(x = -1, y = 2, label = paste0("2D Stress = ", formatC(mds$stress, digits = 4, format = "f")), geom = "text")
+```
+
+```{r}
+anosim_df <- filter(length_data, Transect > 0) %>%
+  group_by(Location, Zone, Site, Level, Transect, GenusSpecies) %>%
+  summarize(N = sum(Abundance)) %>%
+  group_by(Location, GenusSpecies) %>% 
+  summarize(N = mean(N)) %>% 
+  spread(GenusSpecies, N, fill = 0)
+
+
+anosim_matrix <- anosim_df[,-1] %>% sqrt()
+
+anosim_df2 <- filter(length_data, Transect > 0) %>% 
+  group_by(Location, Zone, Site, Level, Transect) %>%
+  summarize(n = n()) %>% 
+  group_by(Location) %>% 
+  summarize(Transects = n()) %>% 
+  select(-Transects)
+
+set.seed(1)
+
+mds <- anosim_matrix %>%
+  vegdist() %>%
+  monoMDS()
+
+as.data.frame(scores(mds)) %>% 
+  mutate(Location = anosim_df2$Location) %>% 
+  ggplot(mapping = aes(x = MDS1, y = MDS2, color = Location)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_bw() +
+  coord_equal() +
+  ggExtra::removeGrid() +
+  geom_text(aes(label = Location), size = 2, check_overlap = T, color = "black", nudge_x = 0.1) +
+  annotate(x = -1, y = 1.5, label = paste0("2D Stress = ", formatC(mds$stress, digits = 4, format = "f")), geom = "text")
+```
+
+```{r}
+anosim_df <- filter(length_data, Transect > 0,
+                    Level == "Bottom") %>%
+  group_by(Location, Zone, Site, Level, Transect, GenusSpecies) %>%
+  summarize(N = sum(Abundance)) %>%
+  # group_by(Location, Zone, Site, Level, GenusSpecies) %>% 
+  # summarize(N = sum(N)) %>% 
+  # left_join(effort, by = c("Location", "Zone", "Site", "Level")) %>% 
+  # mutate(N = N/Transects)%>% 
+  group_by(Location, GenusSpecies) %>% 
+  summarize(N = mean(N)) %>% 
+  spread(GenusSpecies, N, fill = 0)
+
+anosim_matrix <- anosim_df[,-1] %>% sqrt()
+
+anosim_df2 <- filter(length_data, Transect > 0,
+                    Level == "Bottom") %>% 
+  group_by(Location, Zone, Site, Level, Transect) %>%
+  summarize(n = n()) %>% 
+  group_by(Location) %>% 
+  summarize(Transects = n()) %>% 
+  select(-Transects)
+
+set.seed(1)
+
+mds <- anosim_matrix %>%
+  vegdist() %>%
+  monoMDS()
+
+as.data.frame(scores(mds)) %>% 
+  mutate(Location = anosim_df2$Location) %>% 
+  ggplot(mapping = aes(x = MDS1, y = MDS2, color = Location)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_bw() +
+  coord_equal() +
+  ggExtra::removeGrid() +
+  geom_text(aes(label = Location), size = 2, check_overlap = T, color = "black", nudge_x = 0.1) +
+  annotate(x = -0.7, y = 1.55, label = paste0("2D Stress = ", formatC(mds$stress, digits = 4, format = "f")), geom = "text")
+```
+
+```{r}
+anosim_df <- filter(length_data, Transect > 0,
+                    !Level == "Bottom") %>%
+  group_by(Location, Zone, Site, Level, Transect, GenusSpecies) %>%
+  summarize(N = sum(Abundance)) %>%
+  # group_by(Location, Zone, Site, Level, GenusSpecies) %>% 
+  # summarize(N = sum(N)) %>% 
+  # left_join(effort, by = c("Location", "Zone", "Site", "Level")) %>% 
+  # mutate(N = N/Transects)%>% 
+  group_by(Location, GenusSpecies) %>% 
+  summarize(N = mean(N)) %>% 
+  spread(GenusSpecies, N, fill = 0)
+
+anosim_matrix <- anosim_df[,-1] %>% sqrt()
+
+anosim_df2 <- filter(length_data, Transect > 0,
+                    !Level == "Bottom") %>% 
+  group_by(Location, Zone, Site, Level, Transect) %>%
+  summarize(n = n()) %>% 
+  group_by(Location) %>% 
+  summarize(Transects = n()) %>% 
+  select(-Transects)
+
+set.seed(1)
+
+mds <- anosim_matrix %>%
+  vegdist() %>%
+  monoMDS()
+
+as.data.frame(scores(mds)) %>% 
+  mutate(Location = anosim_df2$Location) %>% 
+  ggplot(mapping = aes(x = MDS1, y = MDS2, color = Location)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_bw() +
+  coord_equal() +
+  ggExtra::removeGrid() +
+  geom_text(aes(label = Location), size = 2, check_overlap = T, color = "black", nudge_x = 0.1) +
+  annotate(x = -0.7, y = 1.55, label = paste0("2D Stress = ", formatC(mds$stress, digits = 4, format = "f")), geom = "text")
+```
+
+```{r}
+anosim_df <- filter(length_data, Transect > 0,
+                    !Level == "Bottom",
+                    GenusSpecies %in% abundant_spp$Spp) %>% 
+  group_by(Location, Zone, Site, Level, Transect, KelpDensity, GenusSpecies) %>%
+  summarize(N = sum(Abundance)) %>%
+  # group_by(Location, Zone, Site, Level, GenusSpecies) %>% 
+  # summarize(N = sum(N)) %>% 
+  # left_join(effort, by = c("Site", "Zone", "Habitat")) %>% 
+  # mutate(N = N/Transects) %>% 
+  group_by(Location, KelpDensity, GenusSpecies) %>% 
+  summarize(N = mean(N)) %>% 
+  spread(GenusSpecies, N, fill = 0)
+
+anosim_df[,-1] %>% 
+  scale() %>% 
+  princomp() %>% 
+  biplot(col = c("transparent", "black"), cex = 0.7)
+```
+
+
+# Discussion and Conclusion
+
+# References
+
+
+
+
