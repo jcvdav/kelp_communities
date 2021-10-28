@@ -2,7 +2,7 @@
 title: \Large{Biogeography and community structure of the nearshore kelp forest fishes of Baja California}
 fontsize: 12pt
 output:
-  bookdown::pdf_document2:
+  pdf_document:
     fig_caption: yes
     keep_tex: yes
 header-includes:
@@ -13,6 +13,16 @@ header-includes:
 # bibliography:
 # csl: huct.csl
 ---
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  TeX: { 
+      equationNumbers: { 
+            autoNumber: "all",
+            formatNumber: function (n) {return '9.'+n}
+      } 
+  }
+});
+</script>
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = F, warning = F, message = F)
@@ -61,7 +71,10 @@ Arturo Ramírez-Valdez$^1$, Juan Carlos Villaseñor-Derbez$^2$, Gabriela Montañ
 
 
 ```{r load data}
-length_data <- read.csv(here("data","Peces_KelpForest_2011-2013.csv"), stringsAsFactors = F)
+length_data <- read.csv("./Data/Tidy/Peces_KelpForest_2011-2013.csv", stringsAsFactors = F) %>%
+  filter(Year == 2013) %>% 
+  dplyr::select(ID, Location, Site, Zone, Level, Latitude, Longitude, Transect, KelpDensity, GenusSpecies, TotalLength, Abundance, aTL2TW, bTL2TW, TrophicLevel, Lm, Lmax, Lm, everything())
+
 ```
 
 ```{r, message = F, warning = F}
@@ -138,9 +151,8 @@ tmap_arrange(pen_map, study_area, outer.margins = 0.005, ncol = 2)
 # Results
 
 ```{r}
-taxa_summary <-  group_by(length_data, class, order, family, genus, genusspecies) %>% 
+taxa_summary <-  group_by(length_data, Class, Order, Family, Genus, GenusSpecies) %>% 
   summarize(n = n()) %>% 
-  ungroup() %>% 
   select(-n)
 ```
 
@@ -165,13 +177,12 @@ se <- function(x) {
   sd(x) / sqrt(length(x))
 }
 
-filter(length_data, transect > 0, year == 2013) %>%
-  group_by(location, zone, site, level, transect, genusspecies) %>%
-  summarize(n = sum(abundance)) %>%
-  ungroup() %>% 
+filter(length_data, Transect > 0) %>%
+  group_by(Location, Zone, Site, Level, Transect, GenusSpecies) %>%
+  summarize(n = sum(Abundance)) %>%
   mutate(D = n / 60) %>%
-  select(location, zone, site, level, transect, genusspecies, D) %>%
-  group_by(location, genusspecies) %>%
+  select(Location, Zone, Site, Level, Transect, GenusSpecies, D) %>%
+  group_by(Location, GenusSpecies) %>%
   summarize(SD = se(D),
             D = mean(D)) %>%
   ungroup() %>%
@@ -179,11 +190,11 @@ filter(length_data, transect > 0, year == 2013) %>%
          SD = ifelse(is.na(SD), 0, SD),
          D = formatC(D, digits = 3, format = "f"),
          SD = formatC(SD, digits = 3, format = "f"),
-         value = paste0(D, " (", SD, ")"),
-         value = ifelse(value == "0.000 (0.000)", "", value)) %>%
-  select(location, genusspecies, value) %>%
-  spread(location, value, fill = 0) %>%
-  rename(Taxa = genusspecies) %>%
+         Value = paste0(D, " (", SD, ")"),
+         Value = ifelse(Value == "0.000 (0.000)", "", Value)) %>%
+  select(Location, GenusSpecies, Value) %>%
+  spread(Location, Value) %>%
+  rename(Taxa = GenusSpecies) %>%
   knitr::kable(format = "latex",
                booktabs = T,
                caption = "Mean densities (org / transect) for 50 fish species in 14 Sites along Baja California. Numbers in parenthesis indicate 1 Standard Error") %>%
@@ -192,21 +203,38 @@ filter(length_data, transect > 0, year == 2013) %>%
 ```
 
 ```{r}
+mean_sdl2 <- function(x){
+  data.frame(y = mean(x), ymin = mean(x), ymax = mean(x) +sd(x))
+}
+
+indicator_plot <- function(x, ylab = "", order = NULL){
+  
+  left_join(x, order, by = "Sitio") %>% 
+    transform(Sitio = reorder(Sitio, -Latitude)) %>% 
+    ggplot(mapping = aes(x = Sitio, y = Indicador)) +
+    stat_summary(geom = "col", fun.y = "mean", alpha = 0.5, color = "black") +
+    stat_summary(geom = "errorbar", fun.data = mean_sdl2) +
+    theme_bw() +
+    theme(text = element_text(family = "Times", size = 8),
+          strip.background = element_rect(fill = "transparent"),
+          strip.text = element_text(face = "italic", size = 8)) +
+    ggExtra::rotateTextX() +
+    labs(y = ylab)
+}
+
 indicator_data <- length_data %>% 
-  filter(!year == 2012) %>% 
   mutate(Comunidad = "Baja California",
-         Transecto = id,
+         Transecto = ID,
+         Ano = 2013,
          Zona = "Reserva",
          Temperatura = NA,
          ProfundidadInicial = NA,
          Visibilidad = NA) %>% 
-  filter(transect > 0) %>% 
-  rename(Abundancia = abundance,
-         Sitio = location,
-         GeneroEspecie = genusspecies,
-         Talla = totallength,
-         Ano = year) %>% 
-  filter(Sitio %in% c("ASA", "BMA", "ERE", "ERO", "ISME", "ITSP", "SMI", "SSI"))
+  filter(Transect > 0) %>% 
+  rename(Abundancia = Abundance,
+         Sitio = Location,
+         GeneroEspecie = GenusSpecies,
+         Talla = TotalLength)
 
 H <- shannon(indicator_data, location = "Baja California")
 S <- richness(indicator_data, location = "Baja California")
@@ -229,44 +257,25 @@ kruskal.test(Indicador ~ as.factor(Sitio), D) %>% tidy() %>% kable(caption = "Kr
 kruskal.test(Indicador ~ as.factor(Sitio), B) %>% tidy() %>% kable(caption = "Kruskal-Wallis rank-sum test results for Biomass")
 ```
 
-```{r}
-mean_sdl2 <- function(x){
-  data.frame(y = mean(x), ymin = mean(x), ymax = mean(x) +sd(x))
-}
-
-indicator_plot <- function(x, ylab = "", order = NULL){
-  
-  left_join(x, order, by = "Sitio") %>% 
-    transform(Sitio = reorder(Sitio, -latitude)) %>% 
-    mutate(Ano = as.character(Ano)) %>% 
-    ggplot(mapping = aes(x = Sitio, y = Indicador, fill = Ano, group = paste(Ano, Sitio))) +
-    geom_boxplot(outlier.size = 0) +
-    stat_summary(geom = "point", fun.y = "mean", color = "black", position = position_dodge(width = 1)) +
-    theme_bw() +
-    theme(text = element_text(family = "Times", size = 8)) +
-    labs(y = ylab) +
-    scale_fill_brewer(palette = "Set1")
-}
-```
 
 
 ```{r, fig.cap = "Ecological indicators for fish communities of Baja California's Kelp Forests. A) Shannon's Diversity Index, B) Species richness, C) Density, D) Biomass."}
 
 order <- length_data %>% 
-  group_by(site, latitude) %>% 
+  group_by(Site, Latitude) %>% 
   count() %>% 
-  rename(Sitio = site)
+  rename(Sitio = Site)
 
-H_plot <- indicator_plot(H, ylab = "H'", order)
+H_plot <- indicator_plot(H, ylab = "H'", order) +
+  geom_text(aes(x = 1, y = 3, label = "A"))
+S_plot <- indicator_plot(S, ylab = "S (spp / transect)", order) +
+  geom_text(aes(x = 1, y = 13, label = "B"))
+D_plot <- indicator_plot(D, ylab = "Density (org / transect)", order) +
+  geom_text(aes(x = 1, y = 600, label = "C"))
+B_plot <- indicator_plot(B, ylab = "Biomass (Kg / transect)", order) +
+  geom_text(aes(x = 1, y = 60, label = "D"))
 
-S_plot <- indicator_plot(S, ylab = "S (spp / transect)", order)
-
-D_plot <- indicator_plot((D %>% mutate(Indicador = log10(Indicador))), ylab = "log10 Density (org / transect)", order)
-
-B_plot <- indicator_plot((B %>% mutate(Indicador = log(Indicador))), ylab = "Biomass (Kg / transect)", order)
-
-
-cowplot::plot_grid(H_plot, S_plot, D_plot, B_plot, ncol = 2)
+gridExtra::grid.arrange(H_plot, S_plot, D_plot, B_plot, ncol = 2)
 ```
 
 

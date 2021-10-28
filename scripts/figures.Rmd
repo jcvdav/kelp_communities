@@ -25,7 +25,7 @@ suppressPackageStartupMessages({
 ```
 
 ```{r}
-kelp <- read.csv(here("data", "Peces_KelpForest_2011-2013.csv"),
+kelp <- read.csv(here("data", "raw_data", "Peces_KelpForest_2011-2013.csv"),
                  stringsAsFactors = F) %>% 
     transform(location = reorder(location, latitude)) %>% 
   filter(!year == 2012)
