@@ -20,75 +20,36 @@ suppressPackageStartupMessages({
   library(cowplot)
   library(sf)
   library(tmap)
+  library(rnaturalearth)
   library(tidyverse)
 })
 ```
 
 ```{r}
-kelp <- read.csv(here("data", "raw_data", "Peces_KelpForest_2011-2013.csv"),
+kelp <- read.csv(here("data", "processed_data", "gebs_pisco_data.csv"),
                  stringsAsFactors = F) %>% 
     transform(location = reorder(location, latitude)) %>% 
-  filter(!year == 2012)
+  filter(!genus_species == "ND") %>% 
+  mutate(year = ifelse(year == 2012, 2011, year),
+         year = factor(year))
 ```
 
 ## Mapa
 
-```{r, fig.height = 7, fig.width = 6}
-coastline <- readRDS(file = here("raw_data", "spatial", "coastline_mx.rds")) %>% 
-  st_as_sf()
+```{r}
 
-data(World)
-World <- st_as_sf(World) %>% 
-  st_transform(crs = 4326) %>% 
-  filter(iso_a3 == "USA")
+pts <- select(kelp, location, latitude, longitude) %>% 
+  distinct()
 
-all_points <- group_by(kelp, location, latitude, longitude) %>%
-  summarize(ln = n()) %>%
-  ungroup() %>% 
-  transform(location = reorder(location, -latitude))
+mex_coast <- ne_countries(country = c("Mexico", "United States of America"), returnclass = "sf", scale = 50)
 
-general <- all_points %>% 
-  ggplot() +
-  geom_sf(data = World) +
-  geom_sf(data = coastline) +
-  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
-  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
-  scale_x_continuous(limits = c(-120, -108)) +
-  scale_y_continuous(limits = c(22, 36)) +
-  theme_bw()
+ggplot() +
+  geom_sf(data = mex_coast) + 
+  geom_point(data = pts, aes(x = longitude, y = latitude)) +
+  lims(x = c(-125, -110),
+       y = c(22, 38))
 
-north <- all_points %>% 
-  ggplot() +
-  geom_sf(data = World) +
-  geom_sf(data = coastline) +
-  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
-  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
-  scale_x_continuous(limits = c(-117.5, -116)) +
-  scale_y_continuous(limits = c(31.5, 32.5)) +
-  theme_bw()
 
-center <- all_points %>% 
-  ggplot() +
-  geom_sf(data = World) +
-  geom_sf(data = coastline) +
-  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
-  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
-  scale_x_continuous(limits = c(-117,-115)) +
-  scale_y_continuous(limits = c(29.5, 31.5)) +
-  theme_bw()
-
-south <- all_points %>% 
-  ggplot() +
-  geom_sf(data = World) +
-  geom_sf(data = coastline) +
-  geom_point(aes(x = longitude, y = latitude), size = 2, pch = 21, fill = "steelblue") +
-  # geom_label_repel(aes(x = longitude, y = latitude, label = location)) +
-  scale_x_continuous(limits = c(-116,-114)) +
-  scale_y_continuous(limits = c(27.5, 30)) +
-  theme_bw()
-
-right <- plot_grid(north, center, south, ncol = 1)
-plot_grid(general, right)
 ```
 
 
@@ -96,8 +57,7 @@ plot_grid(general, right)
 
 ```{r}
 kelp11 <- kelp %>% 
-  filter(year < 2013,
-         level == "Bottom")
+  filter(year < 2013)
 ```
 
 
@@ -444,8 +404,7 @@ ggsave(plot = bvi_changes,
 
 ```{r}
 kelp13 <- kelp %>% 
-  filter(year == 2013,
-         level == "Bottom")
+  filter(year == 2013)
 
 Stot_wo0 <- kelp13 %>% 
   filter(transect > 0) %>% 
@@ -459,8 +418,7 @@ Stot_wo0 <- kelp13 %>%
 # S rare
 
 S_data <- kelp13 %>% 
-  filter(transect > 0,
-         level == "Bottom") %>% 
+  filter(transect > 0) %>% 
   group_by(year, location, site, zone, level, transect, genus_species) %>% 
   summarize(N = sum(abundance, na.rm = T)) %>% 
   ungroup() %>% 
@@ -584,7 +542,7 @@ indicators_2011_2013 <- indicators_2011 %>%
          L_2011, L_2013)
 
 write.csv(indicators_2011_2013,
-          file = here("docs", "community", "tables", "indicators_2011_2013.csv"),
+          file = here("data", "processed_data", "indicators_2011_2013.csv"),
           row.names = F)
 
 
@@ -597,138 +555,9 @@ knitr::kable(indicators_2011_2013,
 
 En esta figura comparamos latitud y tiempo al mismo tiempo, y es la que podemos incluir como figura 2.
 
-```{r, fig.width = 10, fig.height = 7, fig.cap = "Comparision of ecological indices by site for 2011 (blue) and 2013 (red). Sites are arranged latitudinally left - right = nort - south."}
+```{r, fig.width = 3, fig.height = 12}
 
-kelp <- kelp %>% 
-  mutate(year = ifelse(year == 2012, 2011, year))
 
-S_data <- kelp %>% 
-  filter(transect > 0,
-         level == "Bottom") %>% 
-  group_by(year, location, site, zone, level, transect, genus_species) %>% 
-  summarize(N = sum(abundance, na.rm = T)) %>% 
-  ungroup() %>% 
-  spread(genus_species, N, fill = 0)
-
-S_matrix <- S_data %>% 
-  select(-c(year, location, site, zone, level, transect)) %>% 
-  as.matrix()
-
-S_groups <- S_data %>% 
-  select(year, location, site, zone, level, transect) %>% 
-  mutate(group = paste(year, location),
-         year = as.character(year))
-
-S_2013 <- specpool(x = S_matrix, pool = as.character(S_groups$group), smallsample = T) %>% 
-  as.data.frame() %>% 
-  mutate(group = rownames(.)) %>% 
-  select(group, value = boot, se = boot.se) %>% 
-  left_join(S_groups, by = "group") %>% 
-  ggplot(aes(x = location, y = value, fill = year)) +
-  geom_errorbar(aes(ymin = value - se, ymax = value + se), width = 0.2, position = position_dodge(width = 0.5)) +
-  geom_point( size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
-  coord_flip() +
-  theme(strip.background = element_blank(),
-        axis.text = element_text(size = 8),
-        axis.title.x = element_text(size = 10),
-        legend.position = "none") +
-  labs(x = "Site", y = "Richness (num. spp)") +
-  scale_fill_brewer(palette = "Set1", direction = -1)
-
-D_2013 <- kelp %>% 
-  filter(transect > 0,
-         level == "Bottom") %>% 
-  filter(!genus_species == "Engraulis mordax") %>% 
-  group_by(year, location, site, zone, level, transect) %>% 
-  summarize(n = sum(abundance, na.rm = T)/60) %>% 
-  group_by(year, location) %>% 
-  summarize(D = mean(n, na.rm = T),
-            sd = sd(n, na.rm = T)) %>% 
-  ungroup() %>% 
-  select(year, location, value = D, sd) %>% 
-  mutate(year = as.character(year)) %>% 
-  ggplot(aes(x = location, y = value, fill = year)) +
-  geom_errorbar(aes(ymin = value - sd, ymax = value + sd), width = 0.2, position = position_dodge(width = 0.5)) +
-  geom_point(size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
-  coord_flip() +
-  theme(strip.background = element_blank(),
-        axis.text = element_text(size = 8),
-        axis.title.x = element_text(size = 10),
-        legend.justification = c(0, 1),
-        legend.position = c(0.8, 0.92),
-        legend.text = element_text(size = 8),
-        legend.title = element_text(size = 8),
-        legend.background = element_rect(fill = "transparent",
-                                         size=0.5,
-                                         linetype = "solid", 
-                                         colour = "black")) +
-  labs(x = "", y = expression(Density~(log[10](Org~m^{-2})))) +
-  scale_fill_brewer(palette = "Set1", direction = -1, name = "Year")
-
-H_2013 <- kelp %>% 
-  filter(transect > 0,
-         level == "Bottom") %>% 
-  group_by(year, location, site, zone, level, transect, genus_species) %>% 
-  summarize(ni = sum(abundance, na.rm = T)) %>% 
-  group_by(year, location, site, zone, level, transect) %>% 
-  mutate(N = sum(ni, na.rm = T)) %>% 
-  ungroup() %>% 
-  mutate(pi = ni / N) %>% 
-  group_by(year, location, site, zone, level, transect) %>% 
-  summarize(Hi = -1 * sum(pi * log(pi))) %>% 
-  ungroup() %>% 
-  group_by(year, location) %>% 
-  summarize(H = mean(Hi, na.rm = T),
-            sd = sd(Hi, na.rm = T)) %>% 
-  ungroup() %>% 
-  select(year, location, value = H, sd) %>% 
-  mutate(year = as.character(year)) %>% 
-  ggplot(aes(x = location, y = value, fill = year)) +
-  geom_errorbar(aes(ymin = value - sd, ymax = value + sd), width = 0.2, position = position_dodge(width = 0.5)) +
-  geom_point(size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
-  coord_flip() +
-  theme(strip.background = element_blank(),
-        axis.text = element_text(size = 8),
-        axis.title.x = element_text(size = 10),
-        legend.position = "none") +
-  labs(x = "", y = "Shannon's index") +
-  scale_fill_brewer(palette = "Set1", direction = -1)
-
-L_2013 <- kelp %>% 
-  filter(transect > 0,
-         level == "Bottom") %>% 
-  group_by(year, location, site, zone, level, transect, genus_species) %>% 
-  summarize(ni = sum(abundance, na.rm = T)) %>% 
-  filter(ni > 0) %>% 
-  group_by(year, location, site, zone, level, transect) %>% 
-  mutate(N = sum(ni)) %>%  
-  ungroup() %>% 
-  group_by(year, location, site, zone, level, transect) %>%
-  summarize(Li = 1 - sum((ni * (ni - 1)) / (N * (N - 1)))) %>% 
-  ungroup() %>% 
-  group_by(year, location) %>% 
-  summarize(L = mean(Li, na.rm = T),
-            sd = sd(Li, na.rm = T)) %>% 
-  ungroup() %>% 
-  select(year, location, value = L, sd)%>% 
-  mutate(year = as.character(year)) %>% 
-  ggplot(aes(x = location, y = value, fill = year)) +
-  geom_errorbar(aes(ymin = value - sd, ymax = value + sd), width = 0.2, position = position_dodge(width = 0.5)) +
-  geom_point(size = 2, color = "black", shape = 21, position = position_dodge(width = 0.5)) + 
-  coord_flip() +
-  theme(strip.background = element_blank(),
-        axis.text = element_text(size = 8),
-        axis.title.x = element_text(size = 10),
-        legend.position = "none") +
-  labs(x = "", y = "Simpson's index") +
-  scale_fill_brewer(palette = "Set1", direction = -1)
-
-(index_2013 <- cowplot::plot_grid(S_2013, D_2013, H_2013, L_2013, ncol = 4, labels = "AUTO"))
-
-ggsave(plot = index_2013,
-       filename = here("docs", "community", "img", "latitudinal_indices_2011_2013.png"),
-       width = 8,
-       height = 4.5)
 ```
 
 ## Densidades de Kelp
