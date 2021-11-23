@@ -1,12 +1,8 @@
 library(here)
-library(raster)
-library(rnaturalearth)
+library(cowplot)
 library(tidyverse)
 
-kelp <- read.csv(here("data", "processed_data", "gebs_pisco_data.csv"),
-                 stringsAsFactors = F) %>% 
-  transform(location = reorder(location, latitude)) %>% 
-  filter(!genus_species == "ND")
+kelp <- readRDS(here("data", "processed_data", "gebs_pisco_data.rds"))
 
 S_2013 <- kelp %>%
   group_by(year, source, location) %>%
@@ -21,7 +17,7 @@ S_2013 <- kelp %>%
         axis.title.x = element_text(size = 10),
         legend.position = "none") +
   labs(x = "Site", y = "Richness (num. spp)") +
-  scale_fill_brewer(palette = "Set1", direction = -1) +
+  scale_fill_manual(values = c("black", "white")) +
   scale_shape_manual(values = c(21, 24))
 
 D_2013 <- kelp %>% 
@@ -43,7 +39,7 @@ D_2013 <- kelp %>%
         axis.title.x = element_text(size = 10),
         legend.position = "none") +
   labs(x = "", y = expression(Density~(log[10](Org~m^{-2})))) +
-  scale_fill_brewer(palette = "Set1", direction = -1, name = "Year") +
+  scale_fill_manual(values = c("black", "white")) +
   scale_shape_manual(values = c(21, 24))
 
 
@@ -78,18 +74,20 @@ L_2013 <- kelp %>%
                                          linetype = "solid", 
                                          colour = "black")) +
   labs(x = "", y = "Simpson's index") +
-  scale_fill_brewer(palette = "Set1", direction = -1) +
-  scale_shape_manual(values = c(21, 24))
+  scale_fill_manual(values = c("black", "white")) +
+  scale_shape_manual(values = c(21, 24)) +
+  guides(shape = guide_legend("Program"),
+         fill = guide_legend("Season", override.aes = list(shape = 21)))
 
 legend <- cowplot::get_legend(L_2013)
 
 L_2013 <- L_2013 +
   theme(legend.position = "none")
 
-(index_2013 <- plot_grid(plot_grid(S_2013, D_2013, L_2013, ncol = 3, labels = "AUTO"),
+(index_2011_2013 <- plot_grid(plot_grid(S_2013, D_2013, L_2013, ncol = 3, labels = "AUTO"),
                          legend, ncol = 1, rel_heights = c(10, 1)))
 
-ggsave(plot = index_2013,
+ggsave(plot = index_2011_2013,
        filename = here("results", "img", "latitudinal_indices_2011_2013.png"),
        width = 8,
        height = 6)
