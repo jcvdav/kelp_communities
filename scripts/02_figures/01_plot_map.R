@@ -24,8 +24,8 @@ sst <- raster(here("data", "raw_data", "sstmean", "sstmean.asc")) %>%
   as.data.frame(xy = T)
 
 map <- ggplot() +
-  geom_raster(data = sst, aes(x = x, y = y, fill = sstmean), alpha = 0.75) +
-  geom_contour(data = sst, aes(x = x, y = y, z = sstmean), color = "black") +
+  geom_raster(data = sst, aes(x = x, y = y, fill = sstmean), alpha = 0.9) +
+  geom_contour(data = sst, aes(x = x, y = y, z = sstmean), color = "black", binwidth = 1) +
   geom_sf(data = mex_coast) + 
   geom_point(data = pts, aes(x = longitude, y = latitude, shape = source), size = 2) +
   theme_bw() +
@@ -39,4 +39,4 @@ map <- ggplot() +
   labs(x = "", y = "")
 
 ggsave(plot = map, filename = here("results", "img", "map.png"),
-       width = 10, height = 10)
+       width = 6, height = 5)

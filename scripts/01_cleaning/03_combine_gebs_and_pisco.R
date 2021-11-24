@@ -37,7 +37,10 @@ pisco_data <- read_xls(path = here("data", "raw_data", "PISCO_kelpforest_fish_AR
 combined <- rbind(pisco_data, gebs_data) %>% 
   mutate(year = case_when(year <= 2012 ~ "Winter 2011 - 2012",
                           year == 2013 ~ "Winter 2013 - 2014")) %>% 
-  mutate(location = fct_reorder(location, latitude))
+  mutate(location = fct_reorder(location, latitude)) %>% 
+  group_by(location) %>% 
+  mutate(latitude = mean(latitude),
+         longitude = mean(longitude))
 
 write_csv(x = combined, file = here("data", "processed_data", "gebs_pisco_data.csv"))
 saveRDS(object = combined, file = here("data", "processed_data", "gebs_pisco_data.rds"))
