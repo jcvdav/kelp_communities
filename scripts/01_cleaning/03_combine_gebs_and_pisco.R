@@ -31,7 +31,7 @@ pisco_data <- read_xls(path = here("data", "raw_data", "PISCO_kelpforest_fish_AR
                                    genus_species == "Halicoeres semicinctus" ~ "Halichoeres semicinctus",
                                    genus_species == "Sebastes dalli" ~ "Sebastes dallii",
                                    T ~ genus_species)) %>% 
-  filter(!genus_species %in% c("ND", "Bathymasteridae", "Cottidae"))
+  filter(!genus_species %in% c("ND", "Bathymasteridae", "Cottidae", "Sebastes spp"))
 
 
 combined <- rbind(pisco_data, gebs_data) %>% 
