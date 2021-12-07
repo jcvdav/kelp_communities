@@ -1,4 +1,10 @@
-
+######################################################
+#combine_gebs_and_pisco#
+######################################################
+# 
+# This cleans and combines the PISCO and UABC datasets
+#
+######################################################
 
 library(here)
 library(janitor)
@@ -9,7 +15,7 @@ gebs_data <- read.csv(here("data", "raw_data", "Peces_KelpForest_2011-2013.csv")
                  stringsAsFactors = F) %>% 
   transform(location = reorder(location, latitude)) %>% 
   select(id, year, location, latitude, longitude, site, level, transect, kelp_density, genus_species, total_length, abundance) %>% 
-  mutate(source = "GEBS") %>% 
+  mutate(source = "UABC-IIO") %>% 
   mutate(genus_species = case_when(genus_species == "Engraulix mordax/A. compressa" ~ "E. mordax/A. compressa",
                                    T ~ genus_species))
 

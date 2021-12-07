@@ -6,17 +6,19 @@
 #
 ######################################################
 
+# SET UP #######################################################################
 # Load packages
 library(here)
 library(vegan)
+library(ggrepel)
 library(cowplot)
 library(tidyverse)
 
+# Load data
 kelp <- readRDS(here("data", "processed_data", "gebs_pisco_data.rds")) 
 temps <- read_csv(here("data", "processed_data", "sst_by_location.csv"))
 
-
-################################################################################
+# PROCESSING ###################################################################
 
 # BLatitudinal differences
 abundance_matrix_latitude <- kelp %>% 
@@ -45,6 +47,7 @@ latitudinal_nmds_data <- cbind(metadata_abundance_matrix_latitude, scores(latitu
 
 latitudinal_nmds_plot <- ggplot(data = latitudinal_nmds_data, aes(x = NMDS1, y = NMDS2, fill = sstmean)) +
   geom_point(aes(shape = source), size = 4) +
+  geom_text_repel(aes(label = location), color = "black", size = 3, min.segment.length = 0) +
   annotate(geom = "text", x = -0.1, y = -0.45, label = paste("2D Stress =", formatC(latitudinal_nmds$grstress, digits = 4, format = "f"))) +
   theme_bw() +
   theme(aspect.ratio = 1) +
@@ -52,19 +55,6 @@ latitudinal_nmds_plot <- ggplot(data = latitudinal_nmds_data, aes(x = NMDS1, y =
   scale_fill_gradientn(colors = colorRamps::matlab.like(100))+
   guides(fill = guide_colorbar(title = "Mean SST (ºC)", frame.colour = "black", ticks.colour = "black"),
          shape = guide_legend(title = "Program"))
-
-latitudinal_nmds_plot2 <- ggplot(data = latitudinal_nmds_data, aes(x = NMDS1, y = NMDS2, color = sstmean)) +
-  geom_text(aes(label = location)) +
-  annotate(geom = "text", x = -0.1, y = -0.45, label = paste("2D Stress =", formatC(latitudinal_nmds$grstress, digits = 4, format = "f"))) +
-  theme_bw() +
-  theme(aspect.ratio = 1) +
-  scale_shape_manual(values = c(21, 24)) +
-  scale_color_gradientn(colors = colorRamps::matlab.like(100))+
-  guides(color= guide_colorbar(title = "Mean SST (ºC)", frame.colour = "black", ticks.colour = "black"),
-         shape = guide_legend(title = "Program"))
-
-
-
 
 # Time differences
 twice_sampled <- count(kelp, year, location) %>%
@@ -98,13 +88,17 @@ set.seed(43)
 nmds_time <- metaMDS(distance_matrix_time, trace = F)
 
 
-mds_data <- cbind(metadata_abundance_matrix_time, scores(nmds_time))
+mds_data <- cbind(metadata_abundance_matrix_time, scores(nmds_time)) %>% 
+  mutate(location_lab = location)
+
+mds_data$location_lab[mds_data$year != "Winter 2011 - 2012"] <- NA
 
 
 time_nmds_plot <- ggplot(data = mds_data, aes(x = NMDS1, y = NMDS2, fill = year)) +
   geom_point(size = 4, aes(shape = source)) +
+  geom_text_repel(aes(label = location_lab), color = "black", size = 3, min.segment.length = 0) +
   geom_path(aes(group = location)) +
-  annotate(geom = "text", x = -0.35, y = 0.35,
+  annotate(geom = "text", x = -0.15, y = 0.35,
            label = paste("2D Stress =", formatC(nmds_time$grstress, digits = 4, format = "f"))) +
   theme_bw() +
   theme(aspect.ratio = 1) +
@@ -166,7 +160,7 @@ ggsave(plot = final_figure, filename = here("results", "img", "nmds_figure.png")
 # Simper analysis to test for community structure (2011-2012 data only)
 simper_data <- kelp %>% 
   filter(transect > 0,
-         year == "W 2011 - 2012") %>% 
+         year == "Winter 2011 - 2012") %>% 
   group_by(location, site, level, transect, genus_species) %>%	
   summarize(n = sqrt(sum(abundance))) %>%	
   ungroup() %>% 	
@@ -183,6 +177,10 @@ sim <- simper(comm = comm,
               permutations = 99,	
               parallel = 6)
 
+prog_loc <- kelp %>% 
+  select(source, location) %>% 
+  distinct()
+
 res <- sim %>% 
   summary() %>% 
   map_dfr(magrittr::extract, .id = "pair") %>%
@@ -193,20 +191,34 @@ res <- sim %>%
   group_by(pair) %>% 
   mutate(average_norm = average / sum(average)) %>% 
   ungroup() %>% 
-  mutate(genus_species = fct_reorder(genus_species, average_norm, max))
+  mutate(genus_species = fct_reorder(genus_species, average_norm, max),
+         from = str_extract_all(pair, "[:alpha:]+_", simplify = T),
+         to = str_extract_all(pair, "_[:alpha:]+", simplify = T),
+         from = str_remove(from, "_"),
+         to = str_remove(to, "_")) %>% 
+  left_join(prog_loc, by = c("from" = "location")) %>% 
+  select(-from) %>% 
+  rename(from = source) %>% 
+  left_join(prog_loc, by = c("to" = "location")) %>% 
+  select(-to) %>% 
+  rename(to = source) %>% 
+  mutate(compare = paste(to, from, sep = "-"))
 
 
 simper_plot <- res %>% 
   filter(cumsum < 0.70, p < 0.05) %>% 
   ggplot(aes(x = genus_species, y = average_norm)) +	
-  geom_boxplot(outlier.size = 0) +
-  geom_jitter(size = 0.1, width = 0.25, height = 0) +
+  geom_jitter(size = 1, width = 0.25, height = 0, aes(color = compare)) +
+  geom_boxplot(outlier.size = 0, fill = "transparent") +
   theme_bw() +	
   theme(axis.text.y = element_text(face = "italic")) +
   coord_flip() +	
   labs(x = "Species", y = "Percent disimilarity") +	
-  theme(legend.position = "none") +
-  scale_y_continuous(labels = scales::percent)
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0)) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_color_brewer(palette = "Set1") +
+  guides(color = guide_legend("Pair"))
 
 ggsave(plot = simper_plot,
        filename = here("results", "img", "simper_plot.png"),
